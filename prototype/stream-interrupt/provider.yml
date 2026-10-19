@@ -1,0 +1,21 @@
+# 临时 profile 的模型路由；凭据从 AIFLASHAPI_API_KEY 读取，不写入仓库。
+- id: llm-pi-ai
+  name: "@deepseek-ai/dsh-llm-pi-ai"
+  config:
+    providers:
+      aiflashapi:
+        displayName: aiflashapi
+        apiKeyEnv: AIFLASHAPI_API_KEY
+        api: openai-responses
+        baseURL: https://api.aiflashapi.com/v1
+        models:
+          - id: deepseek-v4.1-flash
+            name: deepseek-v4.1-flash
+            contextWindow: 1000000
+            maxTokens: 384000
+            input: [text]
+- id: agent-default-model
+  name: "@deepseek-ai/dsh-agent-default-model"
+  config:
+    provider: aiflashapi
+    model: deepseek-v4.1-flash

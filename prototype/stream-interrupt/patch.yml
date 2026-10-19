@@ -1,0 +1,4 @@
+# 把探针挂进临时 profile；PROBE_* 环境变量控制模式、注入通道和触发词。
+- insert:
+    - id: proto-probe
+      name: ./probe.js
