@@ -3,6 +3,8 @@ import test from 'node:test';
 
 import { compileRules, ruleId } from '../../src/ttsr/rules.js';
 
+const silent = { warn() {} };
+
 function createLog() {
   const warnings = [];
   return { warnings, warn(message) { warnings.push(message); } };
@@ -127,4 +129,39 @@ test('interruptMode 缺省为 always，无法识别的值记 warning 后回退',
 
 test('注入与错误码用的 id 去掉引号、逗号与换行', () => {
   assert.equal(ruleId('a,b"c\nd'), 'a_b_c_d');
+});
+
+test('开头的 PCRE 内联旗标转成 RegExp flags', () => {
+  const rules = compileRules(
+    [
+      { name: 'case-insensitive', path: '/r/a.md', body: '', condition: '(?i)system_libs' },
+      { name: 'multi', path: '/r/b.md', body: '', condition: '(?ims)a.b' },
+    ],
+    silent,
+  );
+  assert.equal(rules.length, 2);
+  assert.equal(rules[0].conditions[0].flags, 'i');
+  assert.ok(rules[0].conditions[0].test('SYSTEM_LIBS'));
+  assert.equal(rules[1].conditions[0].flags, 'ims');
+});
+
+test('非开头的内联旗标不翻译，按原生规则报错', () => {
+  const warnings = [];
+  const rules = compileRules(
+    [{ name: 'mid', path: '/r/c.md', body: '', condition: 'a(?i)b' }],
+    { warn: (message) => warnings.push(message) },
+  );
+  assert.deepEqual(rules, []);
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /无法编译/);
+});
+
+test('不支持的旗标原样传给 RegExp', () => {
+  const warnings = [];
+  const rules = compileRules(
+    [{ name: 'bad-flag', path: '/r/d.md', body: '', condition: '(?x)abc' }],
+    { warn: (message) => warnings.push(message) },
+  );
+  assert.deepEqual(rules, []);
+  assert.match(warnings[0], /无法编译/);
 });

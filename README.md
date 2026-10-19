@@ -56,7 +56,7 @@ frontmatter 之后的正文原样使用，首尾空白去掉。支持标量、�
 | `description` | 字符串 | 规则清单里的一句话说明 |
 | `alwaysApply` | 布尔，只有 `true` 生效 | 正文常驻系统提示词 |
 | `globs` | 字符串或字符串数组 | 规则级路径门控，只对工具触发生效 |
-| `condition` | 字符串或字符串数组 | TTSR 触发正则，任一条命中即算命中；兼容旧键 `ttsr_trigger` / `ttsrTrigger` |
+| `condition` | 字符串或字符串数组 | TTSR 触发正则，任一条命中即算命中；开头的 `(?i)` / `(?m)` / `(?s)` 会转成 `RegExp` flags；兼容旧键 `ttsr_trigger` / `ttsrTrigger` |
 | `scope` | 字符串或字符串数组 | 触发范围，逗号分隔，大小写不敏感 |
 | `interruptMode` | `always` / `prose-only` / `tool-only` / `never` | 命中后是否中断，缺省 `always` |
 | `astCondition` | 字符串或字符串数组 | 首版不实现匹配，出现时记 warning |

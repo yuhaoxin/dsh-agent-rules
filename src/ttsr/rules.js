@@ -128,12 +128,34 @@ function compileConditions(condition, name, log) {
     if (seen.has(source)) continue;
     seen.add(source);
     try {
-      compiled.push(new RegExp(source));
+      compiled.push(compileCondition(source));
     } catch (error) {
       log.warn(`[agent-rules] TTSR 规则 ${name} 的 condition 无法编译：${source}（${error.message}）`);
     }
   }
   return compiled;
+}
+
+/** 开头的 PCRE 内联旗标组，例如 `(?i)` 或 `(?ims)`。 */
+const INLINE_FLAG_PREFIX = /^\(\?([a-z]+)\)/;
+
+/** 能映射到原生 `RegExp` flags 的内联旗标。 */
+const TRANSLATABLE_INLINE_FLAGS = /^[ims]+$/;
+
+/**
+ * 编译一条 `condition`。开头的 `(?i)` / `(?m)` / `(?s)` 转成 `RegExp` 的 flags：
+ * JS 的 `RegExp` 不接受内联旗标前缀，直接传会让整条规则编译失败。
+ *
+ * 只翻译开头的 `i`/`m`/`s`；中间的组与不支持的旗标原样传给 `new RegExp`，
+ * 让真正非法的模式照常报错。
+ */
+export function compileCondition(pattern) {
+  const match = INLINE_FLAG_PREFIX.exec(pattern);
+  if (match !== null && TRANSLATABLE_INLINE_FLAGS.test(match[1])) {
+    const flags = [...new Set(match[1])].join('');
+    return new RegExp(pattern.slice(match[0].length), flags);
+  }
+  return new RegExp(pattern);
 }
 
 function compileRuleGlobs(globs, id, log) {
