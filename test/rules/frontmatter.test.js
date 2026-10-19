@@ -77,6 +77,11 @@ test('flow 序列支持裸值、引号与嵌套逗号', () => {
   assert.deepEqual(frontmatter.numbers, ['1', true]);
 });
 
+test('标量中间的撇号不开引号，其后的 # 仍是注释', () => {
+  const { frontmatter } = parseFrontmatter(wrap("description: it's fine # 说明"));
+  assert.equal(frontmatter.description, "it's fine");
+});
+
 test('块序列收集后续的 - item 行', () => {
   const { frontmatter } = parseFrontmatter(
     wrap(['condition:', '  - 第一项', '  - "第二项"', 'other: 值'].join('\n')),

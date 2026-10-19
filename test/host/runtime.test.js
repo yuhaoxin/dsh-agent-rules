@@ -122,7 +122,7 @@ test('step/start 记录位置，agent/disposed 清理条目', async (t) => {
   assert.equal(runtime.position('s1'), undefined);
 });
 
-test('带 condition 的规则进 TTSR 桶，condition 无法编译时回落到 description 桶', async (t) => {
+test('带 condition 的规则进 TTSR 桶，condition 无法编译时回落到 description 桶并记 warning', async (t) => {
   const root = await createWorkspace({
     '.git/HEAD': 'ref: refs/heads/main\n',
     '.agents/rules/trigger.md': ['---', 'condition: needle', 'description: 命中即中断', '---', '', '正文。', ''].join('\n'),
@@ -131,13 +131,19 @@ test('带 condition 的规则进 TTSR 桶，condition 无法编译时回落到 d
   t.after(() => rm(root, { recursive: true, force: true }));
   cwd = root;
 
+  const warnings = [];
   const { ctx } = createContext();
-  const runtime = createHostRuntime({ ctx, home: root });
+  const runtime = createHostRuntime({ ctx, home: root, log: { warn: (message) => warnings.push(message) } });
   const entry = await runtime.attach(createAgent('s1'));
 
   assert.deepEqual(entry.buckets.ttsr.map((rule) => rule.name), ['trigger']);
   assert.deepEqual(entry.buckets.rulebook.map((rule) => rule.name), ['broken']);
   assert.equal(entry.ttsr.rules.length, 1);
+  assert.equal(
+    warnings.filter((message) => message.includes('broken') && message.includes('无法编译')).length,
+    1,
+    '坏正则只记一条 warning，不静默吞掉',
+  );
 });
 
 test('surface 里已有的提醒消息在首次加载时重建去重集合', async (t) => {
@@ -170,4 +176,30 @@ test('surface 里已有的提醒消息在首次加载时重建去重集合', asy
     entry.ttsr.session('s1').matchToolCall({ tool: 'edit', args: { file_path: join(root, 'a.ts'), new_string: 'console.log(1)' } }),
     [],
   );
+});
+
+test('并发 attach 串行执行，第二次复用第一次的条目', async (t) => {
+  const root = await createWorkspace({
+    '.git/HEAD': 'ref: refs/heads/main\n',
+    '.agents/rules/always.md': ['---', 'alwaysApply: true', '---', '', '总是遵守。', ''].join('\n'),
+  });
+  t.after(() => rm(root, { recursive: true, force: true }));
+  cwd = root;
+
+  // 每次加载都会先问一次工作目录，据此统计发现次数。
+  let loads = 0;
+  const { ctx } = createContext();
+  ctx.workingDirectory.ensure = async () => {
+    loads += 1;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    return cwd;
+  };
+  const runtime = createHostRuntime({ ctx, home: root });
+  const agent = createAgent('s1');
+
+  const [first, second] = await Promise.all([runtime.attach(agent), runtime.attach(agent)]);
+  assert.equal(first, second, '两次调用拿到同一条目');
+  assert.equal(loads, 2, '第二次进入 load 后看到未过期条目，直接复用');
+  assert.equal(runtime.entry('s1'), first);
+  assert.match(runtime.promptText(agent), /总是遵守。/);
 });

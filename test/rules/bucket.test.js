@@ -30,8 +30,14 @@ test('有 condition 的规则只进 TTSR 桶，优先于 alwaysApply 与 descrip
 test('isTtsrAccepted 放行时才进 TTSR 桶', () => {
   const target = rule('no-tabs', { condition: '\\t' });
   const accepted = [];
-  bucketRules([target], { isTtsrAccepted: (candidate) => accepted.push(candidate.name) > 0 });
+  const buckets = bucketRules([target], {
+    isTtsrAccepted: (candidate) => {
+      accepted.push(candidate.name);
+      return true;
+    },
+  });
   assert.deepEqual(accepted, ['no-tabs']);
+  assert.deepEqual(buckets.ttsr, [target], '放行的规则真的进了 TTSR 桶');
 });
 
 test('isTtsrAccepted 拒绝时按 alwaysApply、rulebook 顺序回落', () => {

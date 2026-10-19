@@ -39,10 +39,11 @@ function rule(name, condition, extra = {}) {
 }
 
 /** 从 chunk 数组造一个可异步迭代的流，并在被提前关闭时记录。 */
-function createStream(chunks) {
+function createStream(chunks, observe = () => {}) {
   const queue = [...chunks];
   const iterator = {
     async next() {
+      observe('pull');
       if (queue.length === 0) return { done: true, value: undefined };
       return { done: false, value: queue.shift() };
     },
@@ -193,6 +194,64 @@ test('never 规则的正文命中不中断，本轮结束时用 steer 投递提�
   assert.equal(steered[0].role, 'user');
   assert.deepEqual(steered[0].source, { kind: 'agent-rules', form: 'notice' });
   assert.match(steered[0].content[0].text, /<system-reminder reason="rule_violation" rule="no-needle"/);
+});
+
+test('never 命中在多次 attempt 里只投递一次提醒', async () => {
+  const ctx = createContext();
+  const runtime = createRuntime([rule('no-needle', 'needle', { interruptMode: 'never' })]);
+  installStreamHooks(ctx, runtime);
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const source = createStream([text('needle'), finish()]);
+    await collect(await ctx.waterfall('llm/stream', { sessionId: 's1' }, () => source.stream));
+  }
+
+  const { agent } = createAgent('s1');
+  const steered = [];
+  agent.steer = (message) => steered.push(message);
+  ctx.emit('agent/turn-stopping', { agent, signal: { aborted: false } });
+
+  assert.equal(steered.length, 1);
+  const blocks = steered[0].content[0].text.match(/<system-reminder\b/g);
+  assert.equal(blocks.length, 1, '同一规则只提醒一次');
+});
+
+test('流结束时的 final 全扫补上被节流推迟的命中', async () => {
+  const ctx = createContext();
+  // 规则在超过 FULL_SCAN_LIMIT 后命中：中途的增量扫描被节流跳过，只有结束时的
+  // 全扫能看到它。
+  const { FULL_SCAN_LIMIT } = await import('../../src/ttsr/match.js');
+  const ctxRuntime = createRuntime([rule('late-needle', 'LATE')]);
+  installStreamHooks(ctx, ctxRuntime);
+
+  const source = createStream([text('a'.repeat(FULL_SCAN_LIMIT + 10)), text('LATE'), finish()]);
+  const out = await collect(await ctx.waterfall('llm/stream', { sessionId: 's1' }, () => source.stream));
+
+  assert.equal(out.at(-1).type, 'finish');
+  assert.equal(out.at(-1).reason.failure.code, 'AGENT_RULES_TTSR:late-needle');
+});
+
+test('工具增量也推进转发窗口，输出不会攒到流结束才发出', async () => {
+  const ctx = createContext();
+  const runtime = createRuntime([rule('no-needle', 'needle')]);
+  installStreamHooks(ctx, runtime);
+
+  const chunks = [];
+  for (let index = 0; index < 5000; index += 1) chunks.push({ type: 'tool-call-delta', index: 0, text: '' });
+  chunks.push(finish());
+
+  const events = [];
+  const source = createStream(chunks, (kind) => events.push(kind));
+  const out = [];
+  for await (const chunk of await ctx.waterfall('llm/stream', { sessionId: 's1' }, () => source.stream)) {
+    events.push('yield');
+    out.push(chunk);
+  }
+
+  assert.equal(out.length, 5001, '所有帧都被转发');
+  const firstYield = events.indexOf('yield');
+  const lastPull = events.lastIndexOf('pull');
+  assert.ok(firstYield < lastPull, '转发在流结束前就开始，pending 不会无界增长');
 });
 
 test('tool-only 规则不在正文流中断', async () => {

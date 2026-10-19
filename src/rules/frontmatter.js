@@ -198,8 +198,13 @@ function splitFlowItems(text) {
 
 /**
  * 去掉行尾注释：`#` 位于行首或前面是空白才算注释，引号内的 `#` 保留。
+ *
+ * 引号只在标量开头或 flow 序列的项首才有开引号语义：`description: it's fine # x`
+ * 里的撇号是普通字符，不能让它把后面的 `#` 一起吞掉。
  */
 function stripComment(value) {
+  const start = value.length - value.trimStart().length;
+  const flow = value[start] === '[' || value[start] === '{';
   let quote = '';
   for (let index = 0; index < value.length; index += 1) {
     const char = value[index];
@@ -211,7 +216,7 @@ function stripComment(value) {
       if (char === quote) quote = '';
       continue;
     }
-    if (char === '"' || char === "'") {
+    if ((char === '"' || char === "'") && opensQuote(value, index, start, flow)) {
       quote = char;
       continue;
     }
@@ -220,12 +225,20 @@ function stripComment(value) {
   return value;
 }
 
+/** 该位置的引号是否开启一个引号串：标量开头，或 flow 序列中紧跟 `[` `{` `,`。 */
+function opensQuote(value, index, start, flow) {
+  if (index === start) return true;
+  if (!flow) return false;
+  const previous = value.slice(0, index).trimEnd().at(-1);
+  return previous === '[' || previous === '{' || previous === ',';
+}
+
 function isIgnorable(line) {
   const trimmed = line.trim();
   return trimmed.length === 0 || trimmed.startsWith('#');
 }
 
-/** `always-apply` → `alwaysApply`；下划线不在归一范围内，旧键名原样保留。 */
+/** `always-apply` → `alwaysApply`；下划线不在归一范围内，含下划线的键名原样保留。 */
 function normalizeKey(key) {
   return key.replaceAll(/-([\w])/g, (_, char) => char.toUpperCase());
 }

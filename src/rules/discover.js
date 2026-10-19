@@ -24,12 +24,12 @@
  *   description?: string,               // 去掉首尾空白后非空才保留
  *   alwaysApply: boolean,               // frontmatter 里严格为 true 才是 true
  *   globs?: string | string[],          // 缺省 undefined；显式空数组保留为 []
- *   condition?: string[],               // 兼容旧键 ttsr_trigger / ttsrTrigger
+ *   condition?: string[],               // 触发正则；也接受 ttsr_trigger / ttsrTrigger 键名
  *   astCondition?: string[],
  *   question?: string,
  *   scope?: string[],                   // 逗号切分，尊重括号与引号
  *   interruptMode?: string,             // never / prose-only / tool-only / always
- *   agents?: string[],                  // 逗号切分并小写；v1 不实现过滤
+ *   agents?: string[],                  // 逗号切分并小写；不参与过滤
  *   level: 'project' | 'user',
  * }
  * ```
@@ -39,6 +39,7 @@ import { readdir, readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 
+import { INTERRUPT_MODES } from '../ttsr/rules.js';
 import { parseFrontmatter } from './frontmatter.js';
 
 /** 规则目录相对每一层工作目录的位置，顺序即同层内的扫描顺序。 */
@@ -46,8 +47,6 @@ const RULE_DIRECTORIES = ['.agent/rules', '.agents/rules'];
 
 /** 规则文件扩展名；`a.md` 与 `a.mdc` 去掉扩展名后同名，按同名规则去重。 */
 const RULE_EXTENSIONS = ['.md', '.mdc'];
-
-const INTERRUPT_MODES = ['never', 'prose-only', 'tool-only', 'always'];
 
 /**
  * 发现规则。

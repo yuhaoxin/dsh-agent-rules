@@ -15,14 +15,41 @@
  * }
  * ```
  *
- * 没有 `condition` 的规则不注册：`astCondition` 与 `question` 在 v1 没有匹配路径，
- * 由发现阶段记 warning。
+ * 没有 `condition` 的规则不注册：`astCondition` 与 `question` 没有匹配路径，
+ * 由分桶阶段记 warning。
  */
 
 import { createGlobMatcher } from './glob.js';
 
 export const INTERRUPT_MODES = ['always', 'prose-only', 'tool-only', 'never'];
 export const DEFAULT_INTERRUPT_MODE = 'always';
+
+/**
+ * 每条规则在两条路径上的动作。`always` 两条都中断，`prose-only` 只中断正文流，
+ * `tool-only` 只中断工具调用，`never` 两条都不中断（改为被动提醒）。
+ */
+const INTERRUPTS = {
+  always: { stream: true, tool: true },
+  'prose-only': { stream: true, tool: false },
+  'tool-only': { stream: false, tool: true },
+  never: { stream: false, tool: false },
+};
+
+/**
+ * 命中后是否在该路径中断本次输出。
+ *
+ * @param {object} rule 编译后的规则
+ * @param {'stream' | 'tool'} surface 命中的路径
+ * @returns {boolean}
+ */
+export function interrupts(rule, surface) {
+  return INTERRUPTS[rule.interruptMode][surface];
+}
+
+/** 命中后是否只做被动提醒：工具照常执行，输出照常转发。 */
+export function reminds(rule) {
+  return rule.interruptMode === 'never';
+}
 
 /** `tool:<name>` 与 `tool:<name>(<glob>)`。 */
 const TOOL_TOKEN = /^tool:([^()\s]+)(?:\(([^)]*)\))?$/;

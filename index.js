@@ -7,10 +7,11 @@
  * - TTSR 工具命中在 `tools/pre-execute` 拦截，或按规则配置在 `tools/post-execute` 提醒；
  * - TTSR 正文/思考流命中在 `llm/stream` 短路，并在 `agent/request-error` 注入后重试。
  *
- * 规则发现是异步 I/O，而 section 的 `text` 回调在 `assemble()` 里同步执行、早于
- * `system-prompt/assemble` waterfall。所以加载放在 waterfall 里，加载完成后再用
- * 返回值里的 section 回填正文；`assemble()` 拿到的是 waterfall 的返回值，因此
- * 同一 step 的提示词已经包含规则。
+ * 规则发现是异步 I/O，而 section 的 `text` 回调由 `SystemPrompt.assemble()` 同步
+ * 求值、早于 `system-prompt/assemble` waterfall。`assemble()` 返回 waterfall 的
+ * 返回值，所以这里在 waterfall 里加载规则、回填返回值里的 section 正文，同一 step
+ * 渲染出的提示词就包含本次发现的规则。section 的 `text` 回调保留，用于读取上一
+ * step 已加载的内容。
  */
 
 import { PROMPT_SECTION_NAME, PROMPT_SECTION_ORDER, createHostRuntime } from './src/host/runtime.js';

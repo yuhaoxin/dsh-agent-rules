@@ -24,9 +24,6 @@ export const PROMPT_SECTION_ORDER = 850;
 /** 提示词 section 的注册名。 */
 export const PROMPT_SECTION_NAME = 'agent-rules';
 
-/** 分桶前静默试编译，避免与运行时注册重复记同一条 warning。 */
-const SILENT_LOG = { warn() {} };
-
 /**
  * @param {{
  *   ctx: object,
@@ -46,8 +43,11 @@ export function createHostRuntime({ ctx, directories = [], log = console, home =
   /**
    * 判断一条带 `condition` 的规则能否被 TTSR 层接受。不能接受的规则按 omp 的
    * 语义回落到 alwaysApply / rulebook 桶，而不是直接消失。
+   *
+   * 试编译用真实的 log：编译失败的规则不会注册进 TTSR，所以这条 warning 是它
+   * 唯一的诊断，不记就等于静默吞掉一条坏正则。
    */
-  const isTtsrAccepted = (rule) => compileRules([rule], SILENT_LOG).length > 0;
+  const isTtsrAccepted = (rule) => compileRules([rule], log).length > 0;
 
   async function load(agent, signal) {
     const sessionId = agent.session.id;

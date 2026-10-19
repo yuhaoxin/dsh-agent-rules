@@ -13,6 +13,8 @@
  * 一条规则在一个会话里只提醒一次，去重集合由运行时持有并从 surface 重建。
  */
 
+import { interrupts, reminds } from '../ttsr/rules.js';
+
 /**
  * 安装工具路径的监听器。
  *
@@ -23,7 +25,7 @@
 export function installToolHooks(ctx, runtime) {
   ctx.on('tools/pre-execute', async (exec, next) => {
     const scope = resolve(runtime, exec);
-    const hits = scope === undefined ? [] : scope.session.matchToolCall(toolCall(exec)).filter(interrupts);
+    const hits = scope === undefined ? [] : scope.session.matchToolCall(toolCall(exec)).filter(interruptsTool);
     if (hits.length === 0) return next();
 
     const { denied, injection } = scope.session.planToolDeny(hits, scope.display);
@@ -59,12 +61,4 @@ function toolCall(exec) {
   return { tool: exec.name, args: exec.arguments };
 }
 
-/** 工具命中是否中断：`prose-only` 只对正文与思考流生效。 */
-function interrupts(rule) {
-  return rule.interruptMode === 'always' || rule.interruptMode === 'tool-only';
-}
-
-/** 工具命中是否只提醒：`never` 让工具照常执行。 */
-function reminds(rule) {
-  return rule.interruptMode === 'never';
-}
+const interruptsTool = (rule) => interrupts(rule, 'tool');

@@ -6,7 +6,7 @@
  * `runtime.session(sessionId)` 取到同一份会话状态，共享「每规则每会话一次」的
  * 去重集合与「每 step 最多重试 3 次」的预算。
  *
- * 重试链路的契约（由原型与本机验证得出）：
+ * 重试链路的契约：
  * `llm/stream` 命中后用 `planInterrupt(hits, { turn, step })` 决定是否短路。返回
  * `null` 表示本 step 的预算已用完，调用方继续转发输出（放行）；非 null 时停止消费
  * 底层流，只 yield 它给的合成 `finish{kind:'error'}`。loop 随即派发

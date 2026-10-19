@@ -1,7 +1,7 @@
 /**
  * TTSR 正文与思考流路径的事件接线：`llm/stream` 增量匹配、短路，`agent/request-error` 注入并重试。
  *
- * 链路（由原型验证，见 README 的「已知限制」）：
+ * 链路：
  *
  * 1. `llm/stream` 包住 `next()`，累积 `text-delta` 与 `reasoning-delta`，按规则
  *    `scope` 与 `condition` 做增量匹配。命中后调 `planInterrupt(hits, {turn, step})`：
@@ -12,13 +12,15 @@
  *    重试请求从 surface 重新派生消息，因此能看到规则正文。
  *
  * 转发用滑窗：匹配始终看全量累积文本，转发延迟 `FORWARD_WINDOW` 个字符。命中时
- * 只丢弃窗口内尚未转发的部分，已转发的字符无法撤回，这是 v1 的已知限制。
+ * 只丢弃窗口内尚未转发的部分，已转发的字符无法撤回。
  *
  * `interruptMode: never` 的正文命中不中断：命中先记下来，本轮正常结束时由
  * `agent/turn-stopping` 用 `agent.steer()` 把提醒送进下一步，本轮因此不关闭。
  *
  * 只处理 loop 发起的请求：会话标题、压缩等辅助调用带 `purpose`，不参与匹配。
  */
+
+import { interrupts, reminds } from '../ttsr/rules.js';
 
 /**
  * 转发窗口：匹配看全量文本，转发落后这么多字符。窗口越大，命中时丢弃的输出越
@@ -58,23 +60,25 @@ export function installStreamHooks(ctx, runtime) {
       while (true) {
         const { done, value } = await inner.next();
         if (done) {
+          const hits = matcher.final();
+          if (hits.length > 0) {
+            const interrupt = settle(session, hits, position, options.sessionId, deferred);
+            if (interrupt !== null) {
+              yield interrupt;
+              return;
+            }
+          }
           for (const chunk of pending) yield chunk;
           return;
         }
 
         const hits = matchChunk(matcher, value);
-        const interruptHits = hits.filter(interrupts);
-        if (interruptHits.length > 0) {
-          const interrupt = session.planInterrupt(interruptHits, position);
+        if (hits.length > 0) {
+          const interrupt = settle(session, hits, position, options.sessionId, deferred);
           if (interrupt !== null) {
-            yield interrupt.finish;
+            yield interrupt;
             return;
           }
-        }
-        const deferredHits = hits.filter((rule) => rule.interruptMode === 'never');
-        if (deferredHits.length > 0) {
-          const queued = deferred.get(options.sessionId) ?? [];
-          deferred.set(options.sessionId, [...queued, ...deferredHits]);
         }
 
         pending.push(value);
@@ -91,13 +95,13 @@ export function installStreamHooks(ctx, runtime) {
   });
 
   ctx.on('agent/turn-stopping', ({ agent, signal }) => {
-    const hits = deferred.get(agent.session.id);
-    if (hits === undefined) return;
+    const queued = deferred.get(agent.session.id);
+    if (queued === undefined) return;
     deferred.delete(agent.session.id);
     if (signal.aborted) return;
     const entry = runtime.entry(agent.session.id);
     if (entry === undefined) return;
-    const reminder = entry.ttsr.session(agent.session.id).planReminder(hits, entry.display);
+    const reminder = entry.ttsr.session(agent.session.id).planReminder([...queued.values()], entry.display);
     agent.steer(reminder.payload);
   });
 
@@ -116,6 +120,8 @@ export function installStreamHooks(ctx, runtime) {
   });
 }
 
+const interruptsStream = (rule) => interrupts(rule, 'stream');
+
 /**
  * 一个 chunk 命中的规则。工具调用增量不参与正文/思考匹配。
  */
@@ -126,16 +132,34 @@ function matchChunk(matcher, chunk) {
 }
 
 /**
- * 正文与思考流命中是否中断：`never` 走本轮结束后的被动提醒，`tool-only` 只对工具生效。
+ * 处理一次命中的规则集合，返回要 yield 的中断 finish，或 null 表示继续转发。
+ *
+ * 中断型命中交给 `planInterrupt` 判定本 step 的重试预算；`never` 命中先记进
+ * 本轮待投递列表，同一规则在同一轮里只记一次。
+ *
+ * @returns {object | null}
  */
-function interrupts(rule) {
-  return rule.interruptMode === 'always' || rule.interruptMode === 'prose-only';
+function settle(session, hits, position, sessionId, deferred) {
+  const interruptHits = hits.filter(interruptsStream);
+  if (interruptHits.length > 0) {
+    const interrupt = session.planInterrupt(interruptHits, position);
+    if (interrupt !== null) return interrupt.finish;
+  }
+
+  const queued = deferred.get(sessionId) ?? new Map();
+  for (const rule of hits) {
+    if (reminds(rule)) queued.set(rule.id, rule);
+  }
+  if (queued.size > 0) deferred.set(sessionId, queued);
+  return null;
 }
 
 /**
- * 一个 chunk 在转发窗口里占用的字符数。控制帧与工具增量不占窗口。
+ * 一个 chunk 在转发窗口里占用的字符数。正文与思考增量按字符数计，其它帧各占
+ * 一个字符：工具增量本身不携带待丢弃的正文，但窗口要能推进，否则 `pending`
+ * 会在整段工具调用期间无界增长。
  */
 function forwardedLength(chunk) {
   if (chunk.type === 'text-delta' || chunk.type === 'reasoning-delta') return chunk.text.length;
-  return 0;
+  return 1;
 }

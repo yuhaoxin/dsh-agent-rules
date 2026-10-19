@@ -12,9 +12,9 @@
  *   alwaysApply?: boolean,              // 是否把正文注入系统提示词
  *   globs?: string | string[],          // 规则适用的路径 glob
  *   condition?: string | string[],      // TTSR 正则触发条件
- *   astCondition?: string | string[],   // v1 无匹配路径
- *   question?: string,                  // v1 无匹配路径
- *   agents?: string | string[],         // v1 不实现过滤
+ *   astCondition?: string | string[],   // 无匹配路径，只参与分桶
+ *   question?: string,                  // 无匹配路径，只参与分桶
+ *   agents?: string | string[],         // 不参与过滤
  * }
  * ```
  *
@@ -22,8 +22,8 @@
  * `alwaysApply === true` 进 alwaysApply 桶；否则 `description` 非空进 rulebook
  * 桶；三者都不满足的规则丢弃，不记 warning。
  *
- * v1 没有 `astCondition` 与 `question` 的匹配路径，也不实现 `agents` 过滤：
- * 带这些字段的规则按上述顺序照常落桶，只记 warning。
+ * `astCondition` 与 `question` 没有匹配路径，`agents` 不参与过滤：带这些字段的
+ * 规则按上述顺序照常落桶，只记 warning。
  */
 
 /**
