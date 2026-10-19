@@ -17,7 +17,7 @@
 
 import { randomUUID } from 'node:crypto';
 
-import { buildInjection, buildReminder, parseReminded } from './inject.js';
+import { buildInjection, buildReminder, parseReminded, renderInterrupt } from './inject.js';
 import { createTextMatcher, matchToolCall } from './match.js';
 import { compileRules } from './rules.js';
 
@@ -165,8 +165,11 @@ function createSessionState({ state, log }) {
     },
 
     /**
-     * 工具命中需要中断时的拒绝理由与注入消息。`tools/pre-execute` 的 `deny`
-     * 只返回一句 reason 给模型，规则正文通过追加的 surface 消息进入下一步的模型上下文。
+     * 工具命中需要中断时的拒绝理由与注入消息。
+     *
+     * `tools/pre-execute` 的 `deny` 只把 reason 以 `Error: <reason>` 的形式放进
+     * 工具结果，因此规则正文直接作为拒绝理由，模型在同一步就能读到；注入消息
+     * 只承载模板头部与已提醒标记，不再重复正文。
      *
      * 命中在返回前就标记为已提醒：deny 的工具体不执行，`tools/post-execute`
      * 不会为同一次调用再跑一遍去重。
@@ -177,10 +180,9 @@ function createSessionState({ state, log }) {
      */
     planToolDeny(hits, display = {}) {
       markReminded(hits);
-      const names = hits.map((rule) => rule.id).join(', ');
       return {
         hits,
-        denied: `TTSR rule violation: ${names}. The rule body was injected; comply with it before retrying this tool call.`,
+        denied: renderInterrupt(hits, display),
         injection: buildInjection(hits, { id: randomUUID(), ...display }),
       };
     },

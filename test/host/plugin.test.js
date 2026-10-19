@@ -160,3 +160,48 @@ test('directories 配置追加规则目录', async (t) => {
   const section = assembled.sections.find((entry) => entry.name === PROMPT_SECTION_NAME);
   assert.match(section.text, /来自额外目录。/);
 });
+
+test('section 关闭插值，规则正文里的 {{…}} 原样保留', async (t) => {
+  const { root, home } = await createWorkspace();
+  t.after(() => rm(root, { recursive: true, force: true }));
+  t.after(() => rm(home, { recursive: true, force: true }));
+  await writeFile(
+    join(root, '.agents', 'rules', 'template.md'),
+    ['---', 'alwaysApply: true', '---', '', '提交信息用 {{ticket}} 占位。', ''].join('\n'),
+    'utf8',
+  );
+
+  const ctx = createContext(root);
+  await withHome(home, () => apply(ctx, {}));
+  assert.equal(ctx.sections[0].interpolate, false, 'section 声明不参与插值');
+
+  const agent = createAgent('s1');
+  const assembly = createAssembly(ctx);
+  const assembled = await ctx.waterfall(
+    'system-prompt/assemble',
+    assembly,
+    { agent, signal: undefined },
+    async () => assembly,
+  );
+  const section = assembled.sections.find((entry) => entry.name === PROMPT_SECTION_NAME);
+  assert.match(section.text, /\{\{ticket\}\}/);
+});
+
+test('enabled: false 时不注册 section 与任何监听器', async (t) => {
+  const { root, home } = await createWorkspace();
+  t.after(() => rm(root, { recursive: true, force: true }));
+  t.after(() => rm(home, { recursive: true, force: true }));
+
+  const ctx = createContext(root);
+  await withHome(home, () => apply(ctx, { enabled: false }));
+
+  assert.equal(ctx.sections.length, 0);
+  const assembly = createAssembly(ctx);
+  const assembled = await ctx.waterfall(
+    'system-prompt/assemble',
+    assembly,
+    { agent: createAgent('s1'), signal: undefined },
+    async () => assembly,
+  );
+  assert.deepEqual(assembled.sections, []);
+});

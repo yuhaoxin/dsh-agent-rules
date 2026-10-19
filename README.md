@@ -131,9 +131,10 @@ MUST comply:
 
 ### 配置
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `directories` | 字符串数组 | 追加的规则目录，按给定顺序排在用户级目录之后；支持 `~` 展开，相对路径按会话工作目录解析 |
+| 字段 | 类型 | 默认 | 说明 |
+| --- | --- | --- | --- |
+| `enabled` | 布尔 | `true` | 设为 `false` 时插件不注册任何监听器与提示词 section，规则完全不影响会话 |
+| `directories` | 字符串数组 | `[]` | 追加的规则目录，按给定顺序排在用户级目录之后；支持 `~` 展开，相对路径按会话工作目录解析 |
 
 ## 已知限制
 
@@ -151,6 +152,22 @@ node --test test/
 ```
 
 不需要构建步骤，插件没有运行时依赖：frontmatter 解析与 glob 匹配都在仓库内实现。插件以 `link:` 方式装进 profile 时，ESM 按 realpath 解析，应用内的 `yaml`、`picomatch` 不在插件的可解析范围内，因此不依赖它们。
+
+## 验证
+
+`node --test test/` 覆盖 142 个用例：规则发现与目录优先级、frontmatter 各语法分支、分桶优先级、scope 与 glob、两条 TTSR 路径的拦截/提醒/重试、去重与预算、插件层接线。
+
+端到端用真实模型在临时 profile 上跑过七条场景：
+
+| 场景 | 观察结果 |
+| --- | --- |
+| `alwaysApply: true` 项目规则 | 模型输出首行是规则要求的标记 |
+| 用户级 `~/.agent/rules` | 模型输出末行是规则要求的标记 |
+| 只有 `description` 的规则 | 规则清单里出现「名字 — description — 路径」，模型据此 `read` 规则文件并引用原文 |
+| 工具命中 `interruptMode: always` | 工具调用返回 `deny` 理由，工具体未执行；下一步模型按规则改写参数 |
+| 工具命中 `interruptMode: never` | 工具正常执行，提醒进入下一步后模型立即纠正 |
+| 正文流命中 `interruptMode: always` | 会话事件序列为 `assistant/attempt`（丢弃）→ `user/message`（`source.kind='agent-rules'`）→ `assistant/message`（重试成功） |
+| 正文流命中 `interruptMode: never` | 本轮不中断，下一步在提醒下补上规则要求的输出 |
 
 ## 许可
 

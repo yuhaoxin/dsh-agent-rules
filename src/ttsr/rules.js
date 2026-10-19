@@ -26,7 +26,11 @@ export const DEFAULT_INTERRUPT_MODE = 'always';
 
 /**
  * 每条规则在两条路径上的动作。`always` 两条都中断，`prose-only` 只中断正文流，
- * `tool-only` 只中断工具调用，`never` 两条都不中断（改为被动提醒）。
+ * `tool-only` 只中断工具调用，`never` 两条都不中断。
+ *
+ * 不中断的命中都走被动提醒，不丢弃：`never` 的工具命中在 `tools/post-execute`
+ * 附 `additionalContexts`，`never` 与 `tool-only` 的正文命中在本轮结束后经
+ * `agent.steer()` 送进下一步。
  */
 const INTERRUPTS = {
   always: { stream: true, tool: true },

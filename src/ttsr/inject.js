@@ -5,10 +5,15 @@
  * 从会话 surface 里这些消息的模板属性重建，因此恢复与 fork 后仍然生效。
  */
 
-/** 注入消息的 source 标记，也是从 surface 重建去重集合的识别键。 */
+/**
+ * 中断注入的 source 标记，也是从 surface 重建去重集合的识别键。
+ *
+ * `source` 只要求 `kind` 是非空字符串，额外字段原样保留；`form` 用来区分两种
+ * 模板，客户端按 `kind` 渲染，不读 `form`。
+ */
 export const INJECTED_SOURCE = Object.freeze({ kind: 'agent-rules', form: 'instructions' });
 
-/** 被动提醒消息的 source 标记，与中断注入分开识别。 */
+/** 被动提醒消息的 source 标记：与中断注入共用 `kind`，靠 `form` 区分模板。 */
 export const REMINDER_SOURCE = Object.freeze({ kind: 'agent-rules', form: 'notice' });
 
 export const INJECTED_MESSAGE_TYPE = 'user/message';

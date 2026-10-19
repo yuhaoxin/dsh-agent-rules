@@ -24,7 +24,8 @@ test('planToolDeny 返回拒绝理由与注入消息，并把命中标记为已�
   assert.equal(hits.length, 1);
 
   const plan = session.planToolDeny(hits, { cwd: '/repo', home: '/home/dev' });
-  assert.match(plan.denied, /TTSR rule violation: no-console/);
+  assert.match(plan.denied, /<system-interrupt reason="rule_violation" rule="no-console"/);
+  assert.match(plan.denied, /遵守 no-console。/, '拒绝理由直接带规则正文');
   assert.equal(plan.injection.type, 'user/message');
   assert.deepEqual(plan.injection.options, { surfaceOp: 'append' });
   assert.deepEqual(plan.injection.payload.source, { kind: 'agent-rules', form: 'instructions' });

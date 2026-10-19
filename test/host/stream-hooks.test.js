@@ -254,14 +254,22 @@ test('工具增量也推进转发窗口，输出不会攒到流结束才发出',
   assert.ok(firstYield < lastPull, '转发在流结束前就开始，pending 不会无界增长');
 });
 
-test('tool-only 规则不在正文流中断', async () => {
+test('tool-only 规则不在正文流中断，命中改为本轮结束后的提醒', async () => {
   const ctx = createContext();
   const runtime = createRuntime([rule('no-needle', 'needle', { interruptMode: 'tool-only' })]);
   installStreamHooks(ctx, runtime);
 
   const source = createStream([text('needle'), finish()]);
   const out = await collect(await ctx.waterfall('llm/stream', { sessionId: 's1' }, () => source.stream));
-  assert.deepEqual(out.map((chunk) => chunk.type), ['text-delta', 'finish']);
+  assert.deepEqual(out.map((chunk) => chunk.type), ['text-delta', 'finish'], '不中断');
+
+  const { agent } = createAgent('s1');
+  const steered = [];
+  agent.steer = (message) => steered.push(message);
+  ctx.emit('agent/turn-stopping', { agent, signal: { aborted: false } });
+
+  assert.equal(steered.length, 1, '命中不丢弃，改为提醒');
+  assert.match(steered[0].content[0].text, /rule="no-needle"/);
 });
 
 test('request-error 用错误码注入规则并返回 retry', async () => {

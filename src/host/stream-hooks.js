@@ -146,9 +146,12 @@ function settle(session, hits, position, sessionId, deferred) {
     if (interrupt !== null) return interrupt.finish;
   }
 
+  // 不中断的命中一律排进本轮待投递表：`tool-only` 的正文命中与 `never` 一样，
+  // 本轮结束后把提醒送进下一步，不丢弃。
   const queued = deferred.get(sessionId) ?? new Map();
   for (const rule of hits) {
-    if (reminds(rule)) queued.set(rule.id, rule);
+    if (interruptHits.includes(rule)) continue;
+    queued.set(rule.id, rule);
   }
   if (queued.size > 0) deferred.set(sessionId, queued);
   return null;

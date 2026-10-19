@@ -154,3 +154,45 @@ test('规则级 globs 门控工具路径', async () => {
   const py = createExec(runtime, { args: { file_path: '/repo/a.py', new_string: 'console.log(1)' }, sessionId: 's2' });
   assert.deepEqual(await ctx.waterfall('tools/pre-execute', py.exec, async () => ({ kind: 'allow' })), { kind: 'allow' });
 });
+
+test('#8 验收：tool:edit(*.cpp) 规则同时验证拦截与提醒两条路径', async () => {
+  const rules = [
+    rule('no-printf', 'printf', { scope: 'tool:edit(*.cpp)', interruptMode: 'always' }),
+    rule('no-printf-remind', 'std::cout', { scope: 'tool:edit(*.cpp)', interruptMode: 'never' }),
+  ];
+
+  const denyCtx = createContext();
+  const denyRuntime = createRuntime([rules[0]]);
+  installToolHooks(denyCtx, denyRuntime);
+  const deny = createExec(denyRuntime, {
+    name: 'edit',
+    args: { file_path: '/repo/src/main.cpp', new_string: 'printf("x");' },
+  });
+  const denied = await denyCtx.waterfall('tools/pre-execute', deny.exec, async () => ({ kind: 'allow' }));
+  assert.equal(denied.kind, 'deny');
+  assert.match(denied.reason, /no-printf/, '规则正文作为拒绝理由');
+  assert.match(denied.reason, /遵守 no-printf。/);
+
+  const remindCtx = createContext();
+  const remindRuntime = createRuntime([rules[1]]);
+  installToolHooks(remindCtx, remindRuntime);
+  const remind = createExec(remindRuntime, {
+    name: 'edit',
+    args: { file_path: '/repo/src/main.cpp', new_string: 'std::cout << "x";' },
+  });
+  const accepted = await remindCtx.waterfall('tools/post-execute', remind.exec, {}, async () => ({ kind: 'accept' }));
+  assert.equal(accepted.kind, 'accept');
+  assert.equal(accepted.additionalContexts.length, 1);
+  assert.match(accepted.additionalContexts[0].content[0].text, /rule="no-printf-remind"/);
+
+  const py = createExec(remindRuntime, {
+    name: 'edit',
+    args: { file_path: '/repo/src/main.py', new_string: 'std::cout << "x";' },
+    sessionId: 's2',
+  });
+  assert.deepEqual(
+    await remindCtx.waterfall('tools/post-execute', py.exec, {}, async () => ({ kind: 'accept' })),
+    { kind: 'accept' },
+    '非 .cpp 文件不命中',
+  );
+});

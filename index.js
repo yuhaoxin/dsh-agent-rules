@@ -23,6 +23,8 @@ export const name = 'agent-rules';
 export const inject = ['agents', 'systemPrompt', 'workingDirectory'];
 
 export function apply(ctx, config = {}) {
+  if (config.enabled === false) return;
+
   const runtime = createHostRuntime({
     ctx,
     directories: config.directories ?? [],
@@ -35,6 +37,9 @@ export function apply(ctx, config = {}) {
   ctx.systemPrompt.section({
     name: PROMPT_SECTION_NAME,
     order: PROMPT_SECTION_ORDER,
+    // 规则正文是用户文本，`{{name}}` 这类字样必须原样保留；否则 assemble 会按
+    // 提示词变量插值，遇到未注册的名字直接抛错。
+    interpolate: false,
     text: (context) => (context.agent === undefined ? '' : runtime.promptText(context.agent)),
   });
 
