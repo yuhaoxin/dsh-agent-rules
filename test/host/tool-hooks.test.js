@@ -77,14 +77,18 @@ test('未命中时 pre-execute 放行，不追加消息', async () => {
   assert.equal(appended.length, 0);
 });
 
-test('prose-only 规则不在工具路径拦截', async () => {
+test('prose-only 规则不在工具路径拦截，命中转为 post-execute 提醒', async () => {
   const ctx = createContext();
   const runtime = createRuntime([rule('no-console', 'console\\.log', { scope: 'tool', interruptMode: 'prose-only' })]);
   installToolHooks(ctx, runtime);
 
   const { exec } = createExec(runtime, { args: { file_path: '/repo/a.ts', new_string: 'console.log(1)' } });
-  const decision = await ctx.waterfall('tools/pre-execute', exec, async () => ({ kind: 'allow' }));
-  assert.deepEqual(decision, { kind: 'allow' });
+  const pre = await ctx.waterfall('tools/pre-execute', exec, async () => ({ kind: 'allow' }));
+  assert.deepEqual(pre, { kind: 'allow' });
+
+  const post = await ctx.waterfall('tools/post-execute', exec, {}, async () => ({ kind: 'accept' }));
+  assert.equal(post.additionalContexts.length, 1, '命中不丢弃，改为提醒');
+  assert.match(post.additionalContexts[0].content[0].text, /rule="no-console"/);
 });
 
 test('never 规则在 post-execute 用 additionalContexts 附提醒，工具结果不变', async () => {

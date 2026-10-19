@@ -1,19 +1,20 @@
 /**
  * TTSR 工具调用路径的事件接线：`tools/pre-execute` 拦截与 `tools/post-execute` 提醒。
  *
- * 命中后走哪条路径由规则的 `interruptMode` 决定：
+ * 判定按 omp 的批级语义：一次工具调用的全部命中放在一起看，只要有一条规则允许
+ * 在工具路径中断就整批中断，否则整批转成被动提醒。不逐条拆分，也不丢弃命中。
  *
- * - `always` / `tool-only`：在 `tools/pre-execute` 返回 `deny`，工具体不执行，
- *   规则正文作为一条 surface 消息追加，下一步的模型上下文能看到它。同一响应里
- *   其它工具照常执行：DSH 的 deny 只作用于命中的那次调用。
- * - `never`：在 `tools/post-execute` 用 `additionalContexts` 附一条
- *   `<system-reminder>`，工具照常执行，提醒进入下一步。
- * - `prose-only`：工具命中不产生任何动作，它只对正文与思考流生效。
+ * - 中断：`tools/pre-execute` 返回 `deny`，拒绝理由是 omp 的 `<system-interrupt>`
+ *   模板（含规则正文），工具体不执行。同一响应里其它工具照常执行：DSH 的 deny
+ *   只作用于命中的那次调用。
+ * - 不中断：`tools/post-execute` 用 `additionalContexts` 附一条
+ *   `<system-reminder>`，工具照常执行，提醒进入下一步。`never` 与 `prose-only`
+ *   的工具命中都走这条路径。
  *
  * 一条规则在一个会话里只提醒一次，去重集合由运行时持有并从 surface 重建。
  */
 
-import { interrupts, reminds } from '../ttsr/rules.js';
+import { shouldInterrupt } from '../ttsr/rules.js';
 
 /**
  * 安装工具路径的监听器。
@@ -25,8 +26,8 @@ import { interrupts, reminds } from '../ttsr/rules.js';
 export function installToolHooks(ctx, runtime) {
   ctx.on('tools/pre-execute', async (exec, next) => {
     const scope = resolve(runtime, exec);
-    const hits = scope === undefined ? [] : scope.session.matchToolCall(toolCall(exec)).filter(interruptsTool);
-    if (hits.length === 0) return next();
+    const hits = scope === undefined ? [] : scope.session.matchToolCall(toolCall(exec));
+    if (!shouldInterrupt(hits, 'tool')) return next();
 
     const { denied, injection } = scope.session.planToolDeny(hits, scope.display);
     exec.agent.session.append(injection.type, injection.payload, injection.options);
@@ -36,8 +37,8 @@ export function installToolHooks(ctx, runtime) {
   ctx.on('tools/post-execute', async (exec, result, next) => {
     const downstream = await next();
     const scope = resolve(runtime, exec);
-    const hits = scope === undefined ? [] : scope.session.matchToolCall(toolCall(exec)).filter(reminds);
-    if (hits.length === 0) return downstream;
+    const hits = scope === undefined ? [] : scope.session.matchToolCall(toolCall(exec));
+    if (hits.length === 0 || shouldInterrupt(hits, 'tool')) return downstream;
 
     const reminder = scope.session.planReminder(hits, scope.display);
     return { ...downstream, additionalContexts: [...(downstream.additionalContexts ?? []), reminder.payload] };
@@ -60,5 +61,3 @@ function resolve(runtime, exec) {
 function toolCall(exec) {
   return { tool: exec.name, args: exec.arguments };
 }
-
-const interruptsTool = (rule) => interrupts(rule, 'tool');

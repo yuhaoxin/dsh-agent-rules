@@ -20,7 +20,7 @@
  * 只处理 loop 发起的请求：会话标题、压缩等辅助调用带 `purpose`，不参与匹配。
  */
 
-import { interrupts, reminds } from '../ttsr/rules.js';
+import { shouldInterrupt } from '../ttsr/rules.js';
 
 /**
  * 转发窗口：匹配看全量文本，转发落后这么多字符。窗口越大，命中时丢弃的输出越
@@ -120,8 +120,6 @@ export function installStreamHooks(ctx, runtime) {
   });
 }
 
-const interruptsStream = (rule) => interrupts(rule, 'stream');
-
 /**
  * 一个 chunk 命中的规则。工具调用增量不参与正文/思考匹配。
  */
@@ -134,26 +132,21 @@ function matchChunk(matcher, chunk) {
 /**
  * 处理一次命中的规则集合，返回要 yield 的中断 finish，或 null 表示继续转发。
  *
- * 中断型命中交给 `planInterrupt` 判定本 step 的重试预算；`never` 命中先记进
- * 本轮待投递列表，同一规则在同一轮里只记一次。
+ * 判定按 omp 的批级语义：整批命中里只要有一条允许在正文流中断就整批中断，
+ * 由 `planInterrupt` 判本 step 的重试预算；否则整批转成被动提醒，本轮结束后
+ * 经 `agent.steer()` 送进下一步，同一规则在同一轮里只记一次。
  *
  * @returns {object | null}
  */
 function settle(session, hits, position, sessionId, deferred) {
-  const interruptHits = hits.filter(interruptsStream);
-  if (interruptHits.length > 0) {
-    const interrupt = session.planInterrupt(interruptHits, position);
+  if (shouldInterrupt(hits, 'stream')) {
+    const interrupt = session.planInterrupt(hits, position);
     if (interrupt !== null) return interrupt.finish;
   }
 
-  // 不中断的命中一律排进本轮待投递表：`tool-only` 的正文命中与 `never` 一样，
-  // 本轮结束后把提醒送进下一步，不丢弃。
   const queued = deferred.get(sessionId) ?? new Map();
-  for (const rule of hits) {
-    if (interruptHits.includes(rule)) continue;
-    queued.set(rule.id, rule);
-  }
-  if (queued.size > 0) deferred.set(sessionId, queued);
+  for (const rule of hits) queued.set(rule.id, rule);
+  deferred.set(sessionId, queued);
   return null;
 }
 

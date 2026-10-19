@@ -25,34 +25,39 @@ export const INTERRUPT_MODES = ['always', 'prose-only', 'tool-only', 'never'];
 export const DEFAULT_INTERRUPT_MODE = 'always';
 
 /**
- * 每条规则在两条路径上的动作。`always` 两条都中断，`prose-only` 只中断正文流，
+ * 每条规则允许中断的路径。`always` 两条都中断，`prose-only` 只中断正文流，
  * `tool-only` 只中断工具调用，`never` 两条都不中断。
- *
- * 不中断的命中都走被动提醒，不丢弃：`never` 的工具命中在 `tools/post-execute`
- * 附 `additionalContexts`，`never` 与 `tool-only` 的正文命中在本轮结束后经
- * `agent.steer()` 送进下一步。
  */
-const INTERRUPTS = {
-  always: { stream: true, tool: true },
-  'prose-only': { stream: true, tool: false },
-  'tool-only': { stream: false, tool: true },
-  never: { stream: false, tool: false },
+const INTERRUPT_SURFACES = {
+  always: ['stream', 'tool'],
+  'prose-only': ['stream'],
+  'tool-only': ['tool'],
+  never: [],
 };
 
 /**
- * 命中后是否在该路径中断本次输出。
+ * 单条规则是否允许在该路径中断本次输出。
  *
  * @param {object} rule 编译后的规则
  * @param {'stream' | 'tool'} surface 命中的路径
  * @returns {boolean}
  */
 export function interrupts(rule, surface) {
-  return INTERRUPTS[rule.interruptMode][surface];
+  return INTERRUPT_SURFACES[rule.interruptMode].includes(surface);
 }
 
-/** 命中后是否只做被动提醒：工具照常执行，输出照常转发。 */
-export function reminds(rule) {
-  return rule.interruptMode === 'never';
+/**
+ * 一次匹配是否进入中断路径：整批命中里只要有一条规则允许在该路径中断就中断。
+ *
+ * 中断是批级决定，注入也按整批走一条消息；不中断的整批命中转为被动提醒，
+ * 不逐条拆分。
+ *
+ * @param {readonly object[]} rules 本次匹配的全部命中
+ * @param {'stream' | 'tool'} surface 命中的路径
+ * @returns {boolean}
+ */
+export function shouldInterrupt(rules, surface) {
+  return rules.some((rule) => interrupts(rule, surface));
 }
 
 /** `tool:<name>` 与 `tool:<name>(<glob>)`。 */

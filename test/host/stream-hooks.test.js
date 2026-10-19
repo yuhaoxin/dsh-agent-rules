@@ -328,3 +328,42 @@ test('同一 step 命中超过 3 次后放行，不再短路', async () => {
   const out = await collect(await ctx.waterfall('llm/stream', { sessionId: 's1' }, () => source.stream));
   assert.deepEqual(out.map((chunk) => chunk.type), ['text-delta', 'finish'], '预算用完后放行');
 });
+
+test('批级判定：混合批次里只要有一条允许中断就整批中断，全部规则一起注入', async () => {
+  const ctx = createContext();
+  const runtime = createRuntime([
+    rule('always-rule', 'needle', { interruptMode: 'always' }),
+    rule('never-rule', 'needle', { interruptMode: 'never' }),
+  ]);
+  installStreamHooks(ctx, runtime);
+
+  const source = createStream([text('needle'), finish()]);
+  const out = await collect(await ctx.waterfall('llm/stream', { sessionId: 's1' }, () => source.stream));
+
+  assert.equal(out.length, 1);
+  assert.equal(out[0].reason.kind, 'error');
+  assert.equal(out[0].reason.failure.code, 'AGENT_RULES_TTSR:always-rule,never-rule', '两条规则都进错误码');
+});
+
+test('批级判定：整批都不允许中断时转成提醒，逐条都保留', async () => {
+  const ctx = createContext();
+  const runtime = createRuntime([
+    rule('never-a', 'needle', { interruptMode: 'never' }),
+    rule('tool-only-b', 'needle', { interruptMode: 'tool-only' }),
+  ]);
+  installStreamHooks(ctx, runtime);
+
+  const source = createStream([text('needle'), finish()]);
+  const out = await collect(await ctx.waterfall('llm/stream', { sessionId: 's1' }, () => source.stream));
+  assert.deepEqual(out.map((chunk) => chunk.type), ['text-delta', 'finish'], '不中断');
+
+  const { agent } = createAgent('s1');
+  const steered = [];
+  agent.steer = (message) => steered.push(message);
+  ctx.emit('agent/turn-stopping', { agent, signal: { aborted: false } });
+
+  assert.equal(steered.length, 1);
+  const reminderText = steered[0].content[0].text;
+  assert.match(reminderText, /rule="never-a"/);
+  assert.match(reminderText, /rule="tool-only-b"/, 'tool-only 的正文命中不被丢弃');
+});
