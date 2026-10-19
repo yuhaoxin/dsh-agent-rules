@@ -1,0 +1,3 @@
+- insert:
+    - id: agent-rules
+      name: dsh-agent-rules

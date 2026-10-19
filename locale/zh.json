@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Agent 规则",
+    "description": "发现 .agent/.agents 规则，按 alwaysApply 注入提示词、生成规则清单，或用 TTSR 触发提醒。"
+  }
+}

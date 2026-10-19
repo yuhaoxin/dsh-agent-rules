@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Agent Rules",
+    "description": "Discovers .agent/.agents rules and injects them as always-apply prompts, a rule list, or TTSR triggers."
+  }
+}
